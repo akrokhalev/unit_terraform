@@ -7,15 +7,11 @@ terraform {
   required_version = ">= 0.13"
 }
 
-locals {
-  folder_id = "b1g3p7mlsl60dog8mj4t"
-  cloud_id = "b1gppsosmkmr6sm6ream"
-}
 
 provider "yandex" {
-  cloud_id = local.cloud_id
-  folder_id = local.folder_id
-  service_account_key_file = "/home/key/authorized_key.json"
+  cloud_id = var.cloud_id_var
+  folder_id = var.folder_id_var
+  service_account_key_file = var.service_account_key_file_var
   zone = "ru-central1-a"
 
   
@@ -25,11 +21,18 @@ data "yandex_compute_image" "ubuntu_image" {
   family = "ubuntu-2004-lts"
 }
 
+resource "yandex_vpc_subnet" "subnet_terraform" {
+  zone           = "ru-central1-a"
+  network_id     = yandex_vpc_network.network_terraform.id
+  v4_cidr_blocks = ["192.168.15.0/24"]
+}
+
+
 resource "yandex_compute_instance" "vm-test1" {
   name = "test1"
 
   resources {
-    cores  = 1
+    cores  = 2
     memory = 2
   }
 
@@ -41,6 +44,7 @@ resource "yandex_compute_instance" "vm-test1" {
 
   network_interface {
     subnet_id = yandex_vpc_subnet.subnet_terraform.id
+    security_group_ids = [yandex_vpc_security_group.my_webserver.id]
     nat       = true
   }
 
@@ -48,15 +52,55 @@ resource "yandex_compute_instance" "vm-test1" {
     user-data = "${file("./meta.yml")}"
   }
 
+provisioner "remote-exec" {
+    inline = [
+      "sudo apt install -y curl"
+    ]
+    connection {
+      host        = self.network_interface.0.nat_ip_address
+      type        = "ssh"
+      user        = "akrokhalev"
+      private_key = file(var.private_key_file_path)
+    }
+  }
+
+provisioner "local-exec" {
+      when       = create
+      on_failure = continue
+      command    = "ansible-playbook -u akrokhalev -i '${self.network_interface.0.nat_ip_address},' --private-key ${var.private_key_file_path} create_nginx.yml"
+  }
 }
 
 resource "yandex_vpc_network" "network_terraform" {
-  name = "net_terraform"
+  name = "network_terraform"
 }
 
-resource "yandex_vpc_subnet" "subnet_terraform" {
-  name           = "sub_terraform"
-  zone           = "ru-central1-a"
-  network_id     = yandex_vpc_network.network_terraform.id
-  v4_cidr_blocks = ["192.168.15.0/24"]
+
+resource "yandex_vpc_security_group" "my_webserver" {
+  name        = "WebServer security group"
+  description = "my_security_group"
+  network_id  = yandex_vpc_network.network_terraform.id
+
+  ingress {
+    protocol       = "TCP"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 80
+  }
+
+  ingress {
+    protocol       = "TCP"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 443
+  }
+
+  ingress {
+    protocol       = "TCP"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 22
+  }
+  egress {
+    protocol       = "ANY"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = -1
+  }
 }
