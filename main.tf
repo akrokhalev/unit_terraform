@@ -17,9 +17,9 @@ provider "yandex" {
   
 }
 
-data "yandex_compute_image" "ubuntu_image" {
-  family = "ubuntu-2004-lts"
-}
+#data "yandex_compute_image" "ubuntu_image" {
+#  family = "ubuntu-2004-lts"
+#}
 
 resource "yandex_vpc_subnet" "subnet_terraform" {
   zone           = "ru-central1-a"
@@ -38,7 +38,9 @@ resource "yandex_compute_instance" "vm-test1" {
 
   boot_disk {
     initialize_params {
-      image_id = data.yandex_compute_image.ubuntu_image.id
+    #      image_id = data.yandex_compute_image.ubuntu_image.id
+    image_id = "fd8go38kje4f6v3g2k4q"  
+
     }
   }
 
@@ -54,7 +56,7 @@ resource "yandex_compute_instance" "vm-test1" {
 
 provisioner "remote-exec" {
     inline = [
-      "sudo apt install -y curl"
+      "sudo apt install -y curl | apt install mc"
     ]
     connection {
       host        = self.network_interface.0.nat_ip_address
@@ -67,7 +69,7 @@ provisioner "remote-exec" {
 provisioner "local-exec" {
       when       = create
       on_failure = continue
-      command    = "ansible-playbook -u akrokhalev -i '${self.network_interface.0.nat_ip_address},' --private-key ${var.private_key_file_path} create_nginx.yml"
+      command    = "echo ${self.network_interface.0.nat_ip_address} >> hosts |  ansible-playbook -u akrokhalev -i '${self.network_interface.0.nat_ip_address},' --private-key ${var.private_key_file_path} create_nginx.yml"
   }
 }
 
